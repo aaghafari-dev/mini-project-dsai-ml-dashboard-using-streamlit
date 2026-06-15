@@ -1,6 +1,7 @@
 """
-Created for "MINI-PROJECT: | Data - Create a Machine Learning dashboard using Streamlit (Week 29)
-Run with: streamlit run App.py
+Sakila Movie Rental Dashboard - Streamlit App
+Professional Dashboard for Movie Rental Analytics
+Run with: streamlit run app.py
 """
 
 import streamlit as st
@@ -13,7 +14,7 @@ import seaborn as sns
 from datetime import datetime
 import os
 
-# Page configuration (no emoji)
+# Page configuration 
 st.set_page_config(
     page_title="Sakila Movie Rental Dashboard",
     page_icon=None,
@@ -334,15 +335,14 @@ def load_films():
     return pd.read_csv(file_path)
 
 @st.cache_resource
-def load_model():
-    """Loads the all-MiniLM-L6-v2 model from the sentence-transformers library. Unlike keyword matching or bag‑of‑words, this model captures the meaning of the description."""
-    return SentenceTransformer('all-MiniLM-L6-v2')
+def load_model():       # Load the Sentence Transformer Model. 
+    return SentenceTransformer('all-MiniLM-L6-v2')      # A model that can convert any English text into a 384‑dimensional vector (embedding)
 
 @st.cache_data
 def create_embeddings(films_df, _model):
-    """Create embeddings for all film descriptions. Takes the list of all movie descriptions, converts each into a 384‑dimension vector, and returns a NumPy array of shape (n_movies, 384)."""
+    """Create embeddings for all film descriptions"""
     descriptions = films_df['description'].fillna('').tolist()
-    embeddings = _model.encode(descriptions, show_progress_bar=False)       # Convert all movie descriptions to vectors
+    embeddings = _model.encode(descriptions, show_progress_bar=False)
     return embeddings
 
 # Load all data
@@ -456,7 +456,7 @@ elif page == "Exploratory Data Analysis":
     # Section 1: Daily Rental Trends
     st.subheader("Daily Rental Trends by Store (2005)")
 
-    fig1, ax1 = plt.subplots(figsize=(12, 6))
+    fig1, ax1 = plt.subplots(figsize=(10, 6))
 
     colors = ['#2E86AB', '#A23B72']
     for idx, store in enumerate(sorted(daily_rentals['store_id'].unique())):
@@ -564,8 +564,10 @@ elif page == "Exploratory Data Analysis":
             use_container_width=True,
             height=300
         )
-
-    with st.expander("Advanced Analytics"):
+    
+    # DataFrame all_top_movies, which contains every rental of every movie in 2005 – not just the top 5. 
+    # This allows us to analyze the overall distribution of movie ratings across all rentals, not just the top 5, giving us a more comprehensive view of customer preferences.
+    with st.expander("Advanced Analytics: Most Popular Movie Ratings"):
         st.markdown("### Movie Rating Distribution")
         rating_counts = all_top_movies.groupby('rating')['rental_count'].sum().sort_values(ascending=False)
 
@@ -598,20 +600,7 @@ elif page == "Movie Prediction":
     Enter a description below to receive personalized movie recommendations.
     """)
 
-    with st.expander("How to Use This Tool"):
-        st.markdown("""
-        **Step 1**: Enter a movie description in the text area below
-
-        **Step 2**: Click the 'Get Your Prediction' button
-
-        **Step 3**: Review the top 3 most similar movies with their match scores
-
-        **Tips for Best Results**:
-        - Describe the plot, genre, or themes you're interested in
-        - Include key elements like characters, settings, or moods
-        - Be specific for better matching results
-        """)
-
+    # ----- User input section -----
     user_input = st.text_area(
         "Movie Description Input",
         placeholder="Example: A young boy discovers he has magical powers and is invited to attend a school of witchcraft and wizardry...",
@@ -622,27 +611,26 @@ elif page == "Movie Prediction":
         if user_input.strip():
             with st.spinner("Processing description and finding matches..."):
                 try:
-                    user_embedding = model.encode([user_input])         # The user’s typed description is encoded into the same 384‑dimension vector space as the movies.
-                    similarities = cosine_similarity(user_embedding, embeddings)[0]     # Calculates the cosine similarity between the user’s embedding vector and every movie embedding vector
-                    top_indices = similarities.argsort()[-3:][::-1]     # the three most relevant movies to present to the user
+                    user_embedding = model.encode([user_input])         # The user’s query must be in the same vector space as the movies to allow comparison
+                    similarities = cosine_similarity(user_embedding, embeddings)[0]     # Cosine Similarity Computation
+                    top_indices = similarities.argsort()[-3:][::-1]     # Retrieve Top‑3 Most Similar Movies
 
                     st.success("Analysis complete. Found matching movies.")
                     st.markdown("---")
                     st.subheader("Recommended Movies")
-                    #----------------------------
-                    # Extracts the movie title, rating, and a short description preview. Converts the similarity score to a percentage and displays it prominently.
-                    # --------------------------
 
+                    # Display Results with Match Scores
+                    top_movies = []
                     for i, idx in enumerate(top_indices, 1):
                         movie = films_df.iloc[idx]
-                        similarity_score = similarities[idx] * 100
-
+                        similarity_score = similarities[idx] * 100      # Convert raw cosine similarity (0‑1) to a percentage for user‑friendly display
+                        top_movies.append(movie)
                         with st.container():
                             col1, col2 = st.columns([4, 1])
 
                             with col1:
-                                st.markdown(f"**{i}. {movie['Title']}**")
-                                st.markdown(f"*Rating: {movie['Rating']}*")
+                                st.markdown(f"**{i}. {movie['title']}**")
+                                st.markdown(f"*Rating: {movie['rating']}*")
                                 desc_preview = movie['description'][:200] if len(movie['description']) > 200 else movie['description']
                                 st.markdown(desc_preview)
 
@@ -652,11 +640,140 @@ elif page == "Movie Prediction":
 
                             st.markdown("---")
 
+                    # ----- Heatmap of top 3 recommended movies -----
+                    #======= Heatmap shows internal coherence of the recommendations.
+                    if len(top_movies) >= 2:
+                        st.subheader("Similarity Heatmap Among Recommended Movies")
+                        # Get embeddings of the top 3 movies
+                        top_embeddings = embeddings[top_indices]
+                        pairwise_sim = cosine_similarity(top_embeddings)
+                        titles = [m['title'] for m in top_movies]
+                        
+                        fig_heat, ax_heat = plt.subplots(figsize=(6, 5))
+                        sns.heatmap(pairwise_sim, annot=True, fmt=".2f", 
+                                    xticklabels=titles, yticklabels=titles,
+                                    cmap='RdYlBu_r', ax=ax_heat, vmin=0, vmax=1, square=True)
+                        ax_heat.set_title('Pairwise Cosine Similarity Among Top 3 Matches')
+                        plt.tight_layout()
+                        st.pyplot(fig_heat)
+                        st.caption("Higher values (dark red) mean the two movies are very similar to each other. This helps verify that the returned set is coherent.")
+
                 except Exception as e:
                     st.error(f"An error occurred during analysis: {e}")
         else:
             st.warning("Please enter a movie description before searching.")
 
+    # ----- Model Evaluation & Visual Check Section (based on prediction) -----
+    with st.expander("Model Evaluation & Visual Check"):
+        st.markdown("### Evaluation of the Similarity Model")
+        st.markdown("""
+        This section demonstrates how the embedding model and cosine similarity perform on known movie data.
+        You can visually inspect whether similar movie descriptions produce high similarity scores.
+        """)
+
+        # ---- Evaluation 1: Select a movie and find its top matches (with heatmap) ----
+        st.markdown("#### 1. Test with a Specific Movie from the Database")     # Test with a Specific Movie: select any movie, find its top‑5 similar movies, show heatmap including the source movie
+        st.markdown("Select any movie below to see its top 5 most similar movies (excluding itself). This helps verify that the model returns reasonable recommendations.")
+        
+        movie_options = films_df['title'].tolist()
+        selected_movie_title = st.selectbox("Choose a movie", movie_options, index=0)
+        
+        if st.button("Show Similar Movies for Selected Movie", key="eval_button"):
+            selected_idx = films_df[films_df['title'] == selected_movie_title].index[0]
+            selected_embedding = embeddings[selected_idx].reshape(1, -1)
+            all_similarities = cosine_similarity(selected_embedding, embeddings)[0]
+            
+            # Set similarity of the movie to itself to -1 so it's excluded from top results
+            all_similarities[selected_idx] = -1
+            top_eval_indices = all_similarities.argsort()[-5:][::-1]
+            
+            st.markdown(f"**Top 5 movies similar to '{selected_movie_title}':**")
+            eval_results = []
+            top_movies_eval = [films_df.iloc[selected_idx]]  # include the source movie first for heatmap
+            for rank, idx in enumerate(top_eval_indices, 1):
+                movie = films_df.iloc[idx]
+                score = all_similarities[idx] * 100
+                eval_results.append({
+                    'Rank': rank,
+                    'Title': movie['title'],
+                    'Rating': movie['rating'],
+                    'Similarity (%)': f"{score:.1f}"
+                })
+                top_movies_eval.append(movie)
+                st.markdown(f"{rank}. **{movie['title']}** (Rating: {movie['rating']}) – Similarity: {score:.1f}%")
+                with st.expander(f"Preview of '{movie['title']}' description"):
+                    st.write(movie['description'])
+            
+            st.dataframe(pd.DataFrame(eval_results), use_container_width=True)
+            
+            # Visual bar chart for the top matches
+            fig_eval, ax_eval = plt.subplots(figsize=(8, 4))
+            top_scores_eval = all_similarities[top_eval_indices] * 100
+            top_titles_eval = [films_df.iloc[idx]['title'] for idx in top_eval_indices]
+            ax_eval.barh(top_titles_eval, top_scores_eval, color='#A23B72')
+            ax_eval.set_xlabel('Similarity (%)')
+            ax_eval.set_title(f'Movies most similar to "{selected_movie_title}"')
+            plt.tight_layout()
+            st.pyplot(fig_eval)
+            
+            # ----- Heatmap of the source movie + its top 5 matches -----
+            if len(top_movies_eval) >= 2:
+                st.subheader("Cosine Similarity Heatmap (Source Movie + Top 5 Matches)")
+                # Get indices: selected_idx + top_eval_indices
+                heat_indices = [selected_idx] + list(top_eval_indices)
+                heat_embeddings = embeddings[heat_indices]
+                pairwise_heat = cosine_similarity(heat_embeddings)
+                heat_titles = [films_df.iloc[i]['title'] for i in heat_indices]
+                
+                fig_heat2, ax_heat2 = plt.subplots(figsize=(8, 7))
+                sns.heatmap(pairwise_heat, annot=True, fmt=".2f", 
+                            xticklabels=heat_titles, yticklabels=heat_titles,
+                            cmap='RdYlBu_r', ax=ax_heat2, vmin=0, vmax=1, square=True)
+                ax_heat2.set_title('Pairwise Cosine Similarity: Source Movie and Its Top 5 Matches')
+                plt.xticks(rotation=45, ha='right')
+                plt.tight_layout()
+                st.pyplot(fig_heat2)
+                st.caption("The first row/column shows similarity of the source movie to each recommended movie. The rest shows how recommended movies relate to each other.")
+
+        # ---- Evaluation 2: Quantitative metrics summary ----
+        st.markdown("#### 2. Quantitative Evaluation Metrics")
+        st.markdown("The following metrics are computed across all movies to assess the model's behaviour.")
+        
+        # Compute average similarity to own description (should be 1.0)
+        self_similarities = [cosine_similarity(embeddings[i].reshape(1, -1), embeddings[i].reshape(1, -1))[0][0] for i in range(len(films_df))]
+        avg_self_sim = np.mean(self_similarities)
+        
+        # For each movie, find average similarity to top 3 other movies
+        top3_avg_sims = []
+        for i in range(len(films_df)):
+            sims = cosine_similarity(embeddings[i].reshape(1, -1), embeddings)[0]
+            sims[i] = -1
+            top3 = sims[sims.argsort()[-3:]]
+            top3_avg_sims.append(np.mean(top3))
+        avg_top3_sim = np.mean(top3_avg_sims)
+        
+        # Random pair baseline
+        random_pairs = []
+        for _ in range(min(1000, len(films_df)*10)):
+            i, j = np.random.choice(len(films_df), 2, replace=False)
+            random_pairs.append(cosine_similarity(embeddings[i].reshape(1, -1), embeddings[j].reshape(1, -1))[0][0])
+        avg_random_sim = np.mean(random_pairs)
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Self-similarity (perfect match)", f"{avg_self_sim:.3f}", delta="should be 1.0")
+        col2.metric("Avg similarity to top 3 other movies", f"{avg_top3_sim:.3f}", delta="higher is better")
+        col3.metric("Avg similarity between random pairs", f"{avg_random_sim:.3f}", delta="baseline")
+        
+        st.markdown("""
+        **Interpretation**:
+        - **Self-similarity** should be exactly 1.0 (model correctly identifies the same description).
+        - **Top‑3 similarity** indicates how close the best matches are – values > 0.5 suggest good clustering.
+        - **Random pair similarity** provides a baseline; top‑3 scores should be significantly higher than this.
+        """)
+        
+        st.info("These metrics confirm that the embedding model creates meaningful distinctions: similar movies have higher cosine similarity than random pairs.")
+
+    # ----- Sample Descriptions  -----
     with st.expander("Sample Movie Descriptions"):
         st.markdown("""
         **Action Adventure**
@@ -675,6 +792,7 @@ elif page == "Movie Prediction":
         "An in-depth exploration of climate change impacts on coastal communities around the world."
         """)
 
+    # ----- Database statistics -----
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
 
